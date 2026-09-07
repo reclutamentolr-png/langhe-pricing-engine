@@ -3,3 +3,7 @@ pandas
 playwright==1.45.0
 fpdf2
 xlsxwriter
+requests
+python-dotenv
+beautifulsoup4
+lxml
