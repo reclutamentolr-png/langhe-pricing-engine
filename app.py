@@ -32,29 +32,23 @@ def init_db():
                   price REAL, rating REAL, reviews INTEGER, snippet TEXT, is_similar INTEGER,
                   FOREIGN KEY (research_id) REFERENCES researches (id))''')
     
-    # NUOVA TABELLA: Gestione Comuni
     c.execute('''CREATE TABLE IF NOT EXISTS comuni 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   nome TEXT UNIQUE, 
                   attivo INTEGER DEFAULT 1, 
                   is_test INTEGER DEFAULT 0)''')
     
-    # Inserisci admin di default
     c.execute("SELECT * FROM users WHERE username = 'admin'")
     if c.fetchone() is None:
         admin_hash = hashlib.sha256("admin123".encode()).hexdigest()
         c.execute("INSERT INTO users (username, password_hash, role, email, full_name) VALUES (?, ?, ?, ?, ?)",
                   ('admin', admin_hash, 'admin', 'admin@langhepricing.it', 'Amministratore'))
     
-    # Inserisci comuni di default se la tabella è vuota
     c.execute("SELECT COUNT(*) FROM comuni")
     if c.fetchone()[0] == 0:
         comuni_default = [
-            ("Guarene", 1, 0),
-            ("Alba", 1, 0),
-            ("Barolo", 1, 0),
-            ("La Morra", 1, 0),
-            ("Neive", 1, 0)
+            ("Guarene", 1, 0), ("Alba", 1, 0), ("Barolo", 1, 0),
+            ("La Morra", 1, 0), ("Neive", 1, 0)
         ]
         c.executemany("INSERT INTO comuni (nome, attivo, is_test) VALUES (?, ?, ?)", comuni_default)
     
@@ -106,6 +100,23 @@ def get_all_users():
     conn.close()
     return df
 
+# NUOVE FUNZIONI PER GESTIONE IMMOBILI ADMIN
+def get_properties_by_user(user_id):
+    conn = init_db()
+    df = pd.read_sql_query("SELECT * FROM properties WHERE user_id = ?", conn, params=(user_id,))
+    conn.close()
+    return df
+
+def delete_property(prop_id):
+    conn = init_db()
+    c = conn.cursor()
+    # Elimina i dati collegati per mantenere l'integrità del database
+    c.execute("DELETE FROM competitors WHERE research_id IN (SELECT id FROM researches WHERE property_id = ?)", (prop_id,))
+    c.execute("DELETE FROM researches WHERE property_id = ?", (prop_id,))
+    c.execute("DELETE FROM properties WHERE id = ?", (prop_id,))
+    conn.commit()
+    conn.close()
+
 def save_research(property_id, platform, avg_price, competitors_data):
     conn = init_db()
     c = conn.cursor()
@@ -136,11 +147,7 @@ def get_competitors(research_id):
     conn.close()
     return df
 
-# ==========================================
-# NUOVE FUNZIONI: Gestione Comuni
-# ==========================================
 def get_comuni(attivi_only=True):
-    """Recupera i comuni dal database"""
     conn = init_db()
     if attivi_only:
         df = pd.read_sql_query("SELECT * FROM comuni WHERE attivo = 1 ORDER BY nome", conn)
@@ -150,7 +157,6 @@ def get_comuni(attivi_only=True):
     return df
 
 def add_comune(nome, attivo=1, is_test=0):
-    """Aggiunge un nuovo comune"""
     conn = init_db()
     c = conn.cursor()
     try:
@@ -163,7 +169,6 @@ def add_comune(nome, attivo=1, is_test=0):
         conn.close()
 
 def update_comune(comune_id, attivo, is_test):
-    """Aggiorna lo stato di un comune (attivo/test)"""
     conn = init_db()
     c = conn.cursor()
     c.execute("UPDATE comuni SET attivo = ?, is_test = ? WHERE id = ?", (attivo, is_test, comune_id))
@@ -171,7 +176,6 @@ def update_comune(comune_id, attivo, is_test):
     conn.close()
 
 def delete_comune(comune_id):
-    """Elimina un comune"""
     conn = init_db()
     c = conn.cursor()
     c.execute("DELETE FROM comuni WHERE id = ?", (comune_id,))
@@ -222,7 +226,7 @@ def calcola_prezzo(data_str, prezzo_base, config):
 
     for ev in config["eventi"]:
         if datetime.strptime(ev["inizio"], "%Y-%m-%d") <= data <= datetime.strptime(ev["fine"], "%Y-%m-%d"):
-            return round(prezzo_base * ev["molt"], 2), f"🎉 {ev['nome']}"
+            return round(prezzo_base * ev["molt"], 2), f" {ev['nome']}"
 
     if mese in [1, 2, 11]: stag = "Inverno"
     elif mese in [3, 4, 5]: stag = "Primavera"
@@ -241,12 +245,12 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    st.set_page_config(page_title="Login - Langhe Pricing Engine", page_icon="")
+    st.set_page_config(page_title="Login - Langhe Pricing Engine", page_icon="🔐")
     st.title("🔐 Accesso Riservato")
     with st.form("login_form"):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Accedi", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Accedi", type="primary", width="stretch")
         if submitted:
             user = check_password(username, password)
             if user:
@@ -260,12 +264,12 @@ if not st.session_state.logged_in:
                 st.error("❌ Username o password non validi.")
     st.stop()
 
-st.set_page_config(page_title="Langhe Pricing Engine", page_icon="", layout="wide")
+st.set_page_config(page_title="Langhe Pricing Engine", page_icon="🏡", layout="wide")
 
 st.sidebar.title(f"👤 {st.session_state.full_name}")
 st.sidebar.markdown(f"Ruolo: **{st.session_state.role.capitalize()}**")
 st.sidebar.markdown("---")
-if st.sidebar.button("🚪 Logout", type="secondary", use_container_width=True):
+if st.sidebar.button("🚪 Logout", type="secondary", width="stretch"):
     st.session_state.logged_in = False
     st.rerun()
 
@@ -274,7 +278,7 @@ if st.sidebar.button("🚪 Logout", type="secondary", use_container_width=True):
 # ==========================================
 if st.session_state.role == 'admin':
     st.header("🛠️ Pannello di Amministrazione")
-    tab_admin1, tab_admin2, tab_admin3 = st.tabs(["👥 Gestisci Clienti", "🏡 Assegna Immobili", " Gestisci Comuni"])
+    tab_admin1, tab_admin2, tab_admin3 = st.tabs(["👥 Gestisci Clienti", "🏡 Gestisci Immobili", "📍 Gestisci Comuni"])
     
     with tab_admin1:
         st.subheader("Aggiungi Nuovo Cliente")
@@ -290,59 +294,91 @@ if st.session_state.role == 'admin':
                 if new_username and new_password and new_full_name:
                     if add_user(new_username, new_password, new_email, new_full_name):
                         st.success(f"Cliente '{new_full_name}' creato!")
-                    else: st.error("Username già esistente.")
+                        st.rerun()
+                    else: 
+                        st.error("Username già esistente.")
         st.markdown("---")
-        st.dataframe(get_all_users(), use_container_width=True, hide_index=True)
+        st.dataframe(get_all_users(), width="stretch", hide_index=True)
 
     with tab_admin2:
-        st.subheader("Aggiungi un Immobile a un Cliente")
+        st.subheader("🏡 Gestione Immobili per Cliente")
+        
+        # Mostra messaggio di successo persistente
+        if 'success_msg' in st.session_state:
+            st.success(st.session_state['success_msg'])
+            del st.session_state['success_msg']
+            
         df_users = get_all_users()
         if df_users.empty:
-            st.warning("Crea prima un cliente.")
-            st.stop()
-        with st.form("add_property_form"):
-            selected_user = st.selectbox("Seleziona Cliente", df_users['full_name'].tolist())
+            st.warning("Crea prima un cliente nella tab '👥 Gestisci Clienti'.")
+        else:
+            selected_user = st.selectbox("Seleziona un Cliente", df_users['full_name'].tolist(), key="select_user_properties")
             user_id = int(df_users[df_users['full_name'] == selected_user]['id'].values[0])
             
-            prop_name = st.text_input("Nome Immobile")
-            col1, col2 = st.columns(2)
-            with col1:
-                airbnb_link = st.text_input("Link Airbnb")
-                base_price = st.number_input("Prezzo Base (€)", value=150)
-                min_price = st.number_input("Prezzo Minimo (€)", value=90)
-            with col2:
-                booking_link = st.text_input("Link Booking")
-                max_price = st.number_input("Prezzo Massimo (€)", value=450)
+            # 1. Mostra immobili esistenti
+            st.markdown("### 📋 Immobili Assegnati")
+            df_props = get_properties_by_user(user_id)
+            if not df_props.empty:
+                for idx, row in df_props.iterrows():
+                    with st.expander(f"🏠 **{row['name']}** (ID: {row['id']})"):
+                        st.write(f"**Link Airbnb:** {row['airbnb_link'] or 'N/D'}")
+                        st.write(f"**Link Booking:** {row['booking_link'] or 'N/D'}")
+                        st.write(f"**Prezzo:** Base €{row['base_price']} | Min €{row['min_price']} | Max €{row['max_price']}")
+                        st.write(f"**Comuni Target:** {row['target_comuni']}")
+                        st.write(f"**Quality Score:** Valutazione {row['my_rating']}★, {row['my_reviews']} recensioni, {row['my_keywords']} punti servizi")
+                        
+                        col_del1, col_del2 = st.columns([4, 1])
+                        with col_del2:
+                            if st.button("🗑️ Elimina", key=f"del_prop_{row['id']}"):
+                                delete_property(row['id'])
+                                st.session_state['success_msg'] = "Immobile eliminato con successo!"
+                                st.rerun()
+            else:
+                st.info("Nessun immobile assegnato a questo cliente.")
             
-            st.markdown("**Dati per il Quality Score dell'immobile:**")
-            col3, col4, col5 = st.columns(3)
-            with col3: my_rating = st.number_input("Tua Valutazione (0-5)", min_value=0.0, max_value=5.0, value=5.0)
-            with col4: my_reviews = st.number_input("Tue Recensioni (n°)", min_value=0, value=15)
-            with col5: my_keywords = st.number_input("Punti Servizi (0-30)", min_value=0, max_value=30, value=30)
+            st.markdown("---")
             
-            # Carica comuni attivi dal database per il multiselect
-            df_comuni_attivi = get_comuni(attivi_only=True)
-            comuni_list = df_comuni_attivi['nome'].tolist() if not df_comuni_attivi.empty else []
-            
-            target_comuni = st.multiselect("Comuni di confronto", comuni_list, default=comuni_list[:2] if len(comuni_list) >= 2 else comuni_list)
-            
-            if st.form_submit_button("💾 Salva Immobile", type="primary"):
-                if prop_name:
-                    add_property(user_id, prop_name, airbnb_link, booking_link, base_price, min_price, max_price, ", ".join(target_comuni), my_rating, my_reviews, my_keywords)
-                    st.success(f"Immobile '{prop_name}' aggiunto!")
+            # 2. Form per aggiungere nuovo immobile
+            st.subheader("➕ Aggiungi un Nuovo Immobile")
+            with st.form("add_property_form"):
+                prop_name = st.text_input("Nome Immobile")
+                col1, col2 = st.columns(2)
+                with col1:
+                    airbnb_link = st.text_input("Link Airbnb")
+                    base_price = st.number_input("Prezzo Base (€)", value=150)
+                    min_price = st.number_input("Prezzo Minimo (€)", value=90)
+                with col2:
+                    booking_link = st.text_input("Link Booking")
+                    max_price = st.number_input("Prezzo Massimo (€)", value=450)
+                
+                st.markdown("**Dati per il Quality Score dell'immobile:**")
+                col3, col4, col5 = st.columns(3)
+                with col3: my_rating = st.number_input("Tua Valutazione (0-5)", min_value=0.0, max_value=5.0, value=5.0, key="my_rating_new")
+                with col4: my_reviews = st.number_input("Tue Recensioni (n°)", min_value=0, value=15, key="my_reviews_new")
+                with col5: my_keywords = st.number_input("Punti Servizi (0-30)", min_value=0, max_value=30, value=30, key="my_keywords_new")
+                
+                df_comuni_attivi = get_comuni(attivi_only=True)
+                comuni_list = df_comuni_attivi['nome'].tolist() if not df_comuni_attivi.empty else []
+                target_comuni = st.multiselect("Comuni di confronto", comuni_list, default=comuni_list[:2] if len(comuni_list) >= 2 else comuni_list, key="target_comuni_new")
+                
+                if st.form_submit_button("💾 Salva Immobile", type="primary"):
+                    if prop_name:
+                        add_property(user_id, prop_name, airbnb_link, booking_link, base_price, min_price, max_price, ", ".join(target_comuni), my_rating, my_reviews, my_keywords)
+                        st.session_state['success_msg'] = f"✅ Immobile '{prop_name}' aggiunto con successo!"
+                        st.rerun()
+                    else:
+                        st.error("⚠️ Inserisci il nome dell'immobile.")
 
-    # NUOVA TAB: Gestione Comuni
     with tab_admin3:
-        st.subheader(" Gestione Comuni Disponibili")
-        st.markdown("Da qui puoi aggiungere nuovi comuni, abilitarli/disabilitarli o impostarli come 'TEST' per far provare l'applicativo ai clienti in modo limitato.")
+        st.subheader("📍 Gestione Comuni Disponibili")
+        st.markdown("Da qui puoi aggiungere nuovi comuni, abilitarli/disabilitarli o impostarli come 'TEST'.")
         
-        # Form per aggiungere nuovo comune
         with st.form("add_comune_form"):
             col1, col2 = st.columns(2)
             with col1:
-                nuovo_comune = st.text_input("Nome del nuovo comune (es. Monforte d'Alba)")
+                nuovo_comune = st.text_input("Nome del nuovo comune")
             with col2:
-                is_test = st.checkbox("Imposta come comune TEST (solo per prove)")
+                is_test = st.checkbox("Imposta come comune TEST")
             if st.form_submit_button("➕ Aggiungi Comune", type="primary"):
                 if nuovo_comune:
                     if add_comune(nuovo_comune, attivo=1, is_test=1 if is_test else 0):
@@ -355,43 +391,36 @@ if st.session_state.role == 'admin':
         
         st.markdown("---")
         
-        # Lista comuni esistenti
         df_comuni = get_comuni(attivi_only=False)
         if not df_comuni.empty:
             st.markdown("### Comuni Configurati")
-            
             for index, row in df_comuni.iterrows():
                 col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-                
                 with col1:
                     nome_comune = row['nome']
                     if row['is_test'] == 1:
                         st.markdown(f"**{nome_comune}** 🧪 *(TEST)*")
                     else:
                         st.markdown(f"**{nome_comune}**")
-                
                 with col2:
                     attivo = row['attivo'] == 1
                     nuovo_stato = st.toggle("Attivo", value=attivo, key=f"attivo_{row['id']}")
                     if nuovo_stato != attivo:
                         update_comune(row['id'], 1 if nuovo_stato else 0, row['is_test'])
                         st.rerun()
-                
                 with col3:
                     is_test = row['is_test'] == 1
                     nuovo_test = st.toggle("Test", value=is_test, key=f"test_{row['id']}")
                     if nuovo_test != is_test:
                         update_comune(row['id'], row['attivo'], 1 if nuovo_test else 0)
                         st.rerun()
-                
                 with col4:
-                    if st.button("️", key=f"delete_{row['id']}"):
+                    if st.button("🗑️", key=f"delete_{row['id']}"):
                         delete_comune(row['id'])
                         st.rerun()
-                
                 st.markdown("---")
         else:
-            st.info("Nessun comune configurato. Aggiungi il primo comune usando il form sopra.")
+            st.info("Nessun comune configurato.")
 
 elif st.session_state.role == 'client':
     st.header(f"🏡 Dashboard: Revenue Management")
@@ -404,7 +433,6 @@ elif st.session_state.role == 'client':
         selected_prop_name = st.selectbox("Scegli il tuo appartamento", list(prop_options.keys()))
         selected_prop = prop_options[selected_prop_name]
         
-        # Carica comuni attivi dal database (escludendo quelli di test per default)
         df_comuni_attivi = get_comuni(attivi_only=True)
         comuni_disponibili = df_comuni_attivi['nome'].tolist() if not df_comuni_attivi.empty else []
         comuni_non_test = df_comuni_attivi[df_comuni_attivi['is_test'] == 0]['nome'].tolist() if not df_comuni_attivi.empty else []
@@ -439,14 +467,12 @@ elif st.session_state.role == 'client':
             with st.form("new_search_form", clear_on_submit=False):
                 comuni_default = [c.strip() for c in str(selected_prop['target_comuni']).split(',')]
                 
-                # Mostra solo comuni attivi NON di test di default
                 comuni_search = st.multiselect(
                     "Comuni da analizzare", 
                     comuni_non_test,
                     default=[c for c in comuni_default if c in comuni_non_test]
                 )
                 
-                # Se ci sono comuni TEST, aggiungi opzione per includerli
                 if comuni_test:
                     st.caption(f"💡 Sono disponibili {len(comuni_test)} comune/i TEST: {', '.join(comuni_test)}")
                     includi_test = st.checkbox("Includi comuni TEST nella ricerca", value=False)
@@ -460,7 +486,7 @@ elif st.session_state.role == 'client':
                 piattaforma_search = st.selectbox("Piattaforma", ["Airbnb", "Booking", "Entrambe"])
                 max_annunci = st.slider("Max annunci per comune", 5, 20, 10)
                 
-                submitted = st.form_submit_button("🚀 Avvia Ricerca e Calcolo", type="primary", use_container_width=True)
+                submitted = st.form_submit_button("🚀 Avvia Ricerca e Calcolo", type="primary", width="stretch")
                 
                 if submitted:
                     if not comuni_search:
@@ -471,7 +497,7 @@ elif st.session_state.role == 'client':
                         if 'avg_price' in st.session_state:
                             del st.session_state['avg_price']
                         
-                        with st.spinner(f" Ricerca in corso su {piattaforma_search} per {', '.join(comuni_search)}... (attendere 1-2 min)"):
+                        with st.spinner(f"🔍 Ricerca in corso su {piattaforma_search} per {', '.join(comuni_search)}... (attendere 1-2 min)"):
                             try:
                                 print(f"🚀 [DEBUG] Avvio scraping per {comuni_search} su {piattaforma_search}...")
                                 raw_data = execute_search(comuni_search, piattaforma_search, max_annunci)
@@ -500,8 +526,8 @@ elif st.session_state.role == 'client':
                                     df_display = df_results[['Comune', 'Piattaforma', 'Titolo', 'Prezzo', 'Valutazione', 'Recensioni', 'is_similar']].copy()
                                     df_display['is_similar'] = df_display['is_similar'].apply(lambda x: '✅ SIMILE' if x else '❌ DIVERSO')
                                     
-                                    st.dataframe(df_display, use_container_width=True, hide_index=True)
-                                    st.info("👉 Ora clicca sulla tab **' Analisi per Comune'** per vedere i dettagli divisi per zona e scaricare i Report PDF/Excel.")
+                                    st.dataframe(df_display, width="stretch", hide_index=True)
+                                    st.info("👉 Ora clicca sulla tab **'📊 Analisi per Comune'** per vedere i dettagli divisi per zona e scaricare i Report PDF/Excel.")
                                 else:
                                     st.error("⚠️ Nessun dato estratto. Riprova tra qualche minuto.")
                             except Exception as e:
@@ -563,12 +589,12 @@ elif st.session_state.role == 'client':
                     if is_similar and prezzo_val > 0:
                         competitor_validi_prezzi.append(prezzo_val)
                 
-                st.dataframe(pd.DataFrame(dati_tabella), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(dati_tabella), width="stretch", hide_index=True)
                 if competitor_validi_prezzi:
                     prezzo_medio = statistics.mean(competitor_validi_prezzi)
                     st.info(f"💰 **{comune}** - Prezzo medio competitor simili: **€{prezzo_medio:.2f}** ({len(competitor_validi_prezzi)} strutture)")
                 else:
-                    st.warning(f"️ **{comune}** - Nessun competitor con qualità simile trovata.")
+                    st.warning(f"⚠️ **{comune}** - Nessun competitor con qualità simile trovata.")
                 st.markdown("---")
             
             st.markdown("---")
@@ -588,12 +614,12 @@ elif st.session_state.role == 'client':
                 excel_file = f"Report_{selected_prop['name'].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx"
                 export_excel(df_results, df_calendario, selected_prop['name'], st.session_state.full_name, excel_file)
                 with open(excel_file, "rb") as file:
-                    st.download_button(label="📊 Scarica Report Excel Formattato", data=file, file_name=excel_file, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                    st.download_button(label="📊 Scarica Report Excel Formattato", data=file, file_name=excel_file, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width="stretch")
             with col2:
                 pdf_file = f"Report_{selected_prop['name'].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf"
                 export_pdf(df_results, df_calendario, selected_prop['name'], st.session_state.full_name, avg_price, pdf_file)
                 with open(pdf_file, "rb") as file:
-                    st.download_button(label=" Scarica Report PDF (Formato A4)", data=file, file_name=pdf_file, mime="application/pdf", use_container_width=True)
+                    st.download_button(label="📄 Scarica Report PDF (Formato A4)", data=file, file_name=pdf_file, mime="application/pdf", width="stretch")
 
         with tab_c3:
             st.header("Previsione Prezzi per i Prossimi 6 Mesi")
@@ -605,7 +631,7 @@ elif st.session_state.role == 'client':
                 giorno_en = data_futura.strftime("%A")
                 giorno_it = GIORNI_IT.get(giorno_en, giorno_en)
                 prezzo, motivo = calcola_prezzo(data_str, prezzo_base, config)
-                colore = "🔴" if any(ev['nome'] in motivo for ev in EVENTI_LANGHE) else ("" if "Weekend" in motivo else "")
+                colore = "🔴" if any(ev['nome'] in motivo for ev in EVENTI_LANGHE) else ("🟡" if "Weekend" in motivo else "🟢")
                 date_list.append({"Data": data_str, "Giorno": giorno_it, "Prezzo Consigliato (€)": prezzo, "Motivazione": f"{colore} {motivo}"})
             df_calendario = pd.DataFrame(date_list)
             col_filt1, col_filt2 = st.columns(2)
@@ -618,7 +644,7 @@ elif st.session_state.role == 'client':
                 df_visualizzato = df_visualizzato[df_visualizzato["Motivazione"].str.contains("🔴")]
             if mostra_weekend:
                 df_visualizzato = df_visualizzato[df_visualizzato["Giorno"].isin(["Sabato", "Domenica"])]
-            st.dataframe(df_visualizzato, use_container_width=True, height=600)
+            st.dataframe(df_visualizzato, width="stretch", height=600)
 
         with tab_c4:
             st.header("🎉 Calendario Eventi Speciali Langhe")
@@ -626,5 +652,5 @@ elif st.session_state.role == 'client':
             eventi_df = pd.DataFrame(EVENTI_LANGHE)
             eventi_df.columns = ["Evento", "Data Inizio", "Data Fine", "Moltiplicatore Prezzo"]
             eventi_df["Moltiplicatore Prezzo"] = eventi_df["Moltiplicatore Prezzo"].apply(lambda x: f"x{x}")
-            st.dataframe(eventi_df, use_container_width=True, height=400)
+            st.dataframe(eventi_df, width="stretch", height=400)
             st.info("💡 **Come funziona:** Quando una data cade in un periodo di evento, il sistema ignora la stagionalità normale e applica direttamente il moltiplicatore dell'evento al prezzo base.")
