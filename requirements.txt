@@ -1,5 +1,5 @@
 streamlit
 pandas
-playwright
+playwright==1.44.0
 fpdf2
 xlsxwriter
